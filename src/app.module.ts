@@ -50,8 +50,8 @@ import { MessagesModule } from './modules/messages/messages.module';
         'Content-Type': 'application/json',
       },
     }),
-    // UserModule,
-    // MessagesModule
+    UserModule,
+    MessagesModule
   ],
   controllers: [AppController, UserController],
   providers: [AppService, UserService],

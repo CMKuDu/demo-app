@@ -12,17 +12,17 @@ import { UserModule } from '../user/user.module';
   providers: [MessagesService, MessagesGateway],
   controllers: [MessagesController],
   imports: [
-    // TypeOrmModule.forFeature([User]),
-    // JwtModule.registerAsync({
-    //   imports: [ConfigModule],
-    //   useFactory: (configService: ConfigService) => ({
-    //     secret: configService.get<string>('JWT_SECRET'),
-    //     signOptions: { expiresIn: '7d' },
-    //   }),
-    //   inject: [ConfigService],
-    // }),
-    // UserModule,
-    // forwardRef(() => UserModule),
+    TypeOrmModule.forFeature([User]),
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      useFactory: (configService: ConfigService) => ({
+        secret: configService.get<string>('JWT_SECRET'),
+        signOptions: { expiresIn: '7d' },
+      }),
+      inject: [ConfigService],
+    }),
+    UserModule,
+    forwardRef(() => UserModule),
   ],
   exports: [MessagesService, MessagesGateway],
 })
