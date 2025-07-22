@@ -8,6 +8,12 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from './Entites/user.entity';
 import { HttpModule } from '@nestjs/axios';
+import { Message } from './Entites/messages.entity';
+import { MessageReaction } from './Entites/messageReaction.entity';
+import { GroupMember } from './Entites/groupMember.entity';
+import { Conversation } from './Entites/conversation.entity';
+import { ConversationMember } from './Entites/conversationMember.entity';
+import { MessagesModule } from './modules/messages/messages.module';
 
 @Module({
   imports: [
@@ -16,7 +22,7 @@ import { HttpModule } from '@nestjs/axios';
     }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
-      inject: [ConfigModule],
+      inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
         return {
           type: 'mysql',
@@ -25,7 +31,14 @@ import { HttpModule } from '@nestjs/axios';
           username: configService.get<string>('DB_USERNAME'),
           password: configService.get<string>('DB_PASSWORD'),
           database: configService.get<string>('DB_DATABASE'),
-          entities: [User],
+          entities: [
+            User,
+            Message,
+            MessageReaction,
+            GroupMember,
+            ConversationMember,
+            Conversation,
+          ],
           synchronize: configService.get<boolean>('DB_SYNC'),
         };
       },
@@ -37,7 +50,8 @@ import { HttpModule } from '@nestjs/axios';
         'Content-Type': 'application/json',
       },
     }),
-    UserModule,
+    // UserModule,
+    // MessagesModule
   ],
   controllers: [AppController, UserController],
   providers: [AppService, UserService],

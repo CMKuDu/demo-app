@@ -10,30 +10,30 @@ import { ReqUserDTO } from './dto/req/req-user.dto';
 
 @Injectable()
 export class UserService implements IUserService {
-  constructor(
-    @InjectRepository(User)
-    protected readonly userRepository: Repository<User>,
-  ) {}
-  async getAllUser(
-    query: PaginationMeta,
-  ): Promise<PaginationResult<ResUserDTO | null>> {
-    const where: FindOptionsWhere<User> = {};
-    const order: FindOptionsOrder<User> = {};
-    return await paginate<User, ResUserDTO>(
-      this.userRepository,
-      where,
-      query,
-      ResUserDTO,
-      {
-        order: { create_at: 'DESC' },
-        relations: [],
-      },
-    );
-  }
-  async getUserById(dto: ReqUserDTO) {
-    const res = await this.userRepository.findOne({
-      where: { id: dto.id },
-    });
-    return res;
-  }
+  // constructor(
+  //   @InjectRepository(User)
+  //   protected readonly userRepository: Repository<User>,
+  // ) {}
+  // async getAllUser(
+  //   query: PaginationMeta,
+  // ): Promise<PaginationResult<ResUserDTO | null>> {
+  //   const where: FindOptionsWhere<User> = {};
+  //   const order: FindOptionsOrder<User> = {};
+  //   return await paginate<User, ResUserDTO>(
+  //     this.userRepository,
+  //     where,
+  //     query,
+  //     ResUserDTO,
+  //     {
+  //       order: { create_at: 'DESC' },
+  //       relations: [],
+  //     },
+  //   );
+  // }
+  // async getUserById(dto: ReqUserDTO) {
+  //   const res = await this.userRepository.findOne({
+  //     where: { id: dto.id },
+  //   });
+  //   return res;
+  // }
 }

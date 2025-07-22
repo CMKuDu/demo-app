@@ -1,9 +1,21 @@
 import { Expose } from 'class-transformer';
 import { BaseEntity } from 'src/Base/entity.base';
-import { Column, Entity } from 'typeorm';
+import { Column, Entity, OneToMany } from 'typeorm';
+import { MessageReaction } from './messageReaction.entity';
+import { Message } from './messages.entity';
+import { GroupMember } from './groupMember.entity';
 
 @Entity('user')
 export class User extends BaseEntity {
+  @OneToMany(() => MessageReaction, (recipient) => recipient.user, {
+    cascade: true,
+  })
+  @OneToMany(() => GroupMember, (groupMember) => groupMember.user)
+  groupMemberships: GroupMember[];
+  reactions: MessageReaction[];
+  @OneToMany(() => Message, (message) => message.sender)
+  messages: Message[];
+
   @Expose()
   @Column({
     name: 'first_name',
@@ -56,6 +68,8 @@ export class User extends BaseEntity {
     default: false,
   })
   isBanned: boolean;
+
+  /*
   get fullName(): string {
     if (this.firstName && this.lastName) {
       return `${this.firstName} ${this.lastName}`;
@@ -68,4 +82,5 @@ export class User extends BaseEntity {
   get displayName(): string {
     return this.fullName;
   }
+    */
 }
