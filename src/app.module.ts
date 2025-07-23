@@ -14,6 +14,7 @@ import { GroupMember } from './Entites/groupMember.entity';
 import { Conversation } from './Entites/conversation.entity';
 import { ConversationMember } from './Entites/conversationMember.entity';
 import { MessagesModule } from './modules/messages/messages.module';
+import { AuthModule } from './modules/auth/auth.module';
 
 @Module({
   imports: [
@@ -51,9 +52,10 @@ import { MessagesModule } from './modules/messages/messages.module';
       },
     }),
     UserModule,
-    MessagesModule
+    MessagesModule,
+    AuthModule
   ],
-  controllers: [AppController, UserController],
-  providers: [AppService, UserService],
+  controllers: [AppController],
+  providers: [AppService],
 })
 export class AppModule {}

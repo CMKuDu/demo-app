@@ -32,6 +32,14 @@ export class User extends BaseEntity {
   lastName: string | null;
   @Expose()
   @Column({
+    name: 'user_name',
+    type: 'varchar',
+    nullable: true,
+  })
+  userName: string;
+  
+  @Expose()
+  @Column({
     name: 'email',
     type: 'varchar',
     unique: true,
@@ -51,6 +59,7 @@ export class User extends BaseEntity {
     nullable: true,
   })
   phoneNumber: string;
+  
   @Column({
     name: 'pass_word',
     type: 'varchar',
@@ -59,6 +68,7 @@ export class User extends BaseEntity {
   @Column({
     name: 'old_password',
     type: 'varchar',
+    nullable: true,
   })
   oldPassword: string;
   @Expose()
