@@ -1,16 +1,15 @@
 import { forwardRef, HttpStatus, Inject, Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
 import { UserService } from '../user/user.service';
 import { TokenService } from '../token/token.service';
 import { LoginDTO } from './req/req-login.dto';
 import { ResignDTO } from './req/req-resign.dto';
-import { throwError } from 'rxjs';
 import { ApiErrorException } from 'src/exceptions/api-error.exception';
 import { User } from 'src/Entites/user.entity';
 import * as bcrypt from 'bcrypt';
 import { ConfigService } from '@nestjs/config';
+import { IAuthService } from './interface/authen.interface';
 @Injectable()
-export class AuthService {
+export class AuthService implements IAuthService {
   constructor(
     @Inject(forwardRef(() => UserService))
     private readonly userService: UserService,
@@ -19,19 +18,17 @@ export class AuthService {
     @Inject(forwardRef(() => ConfigService))
     private readonly configService: ConfigService,
   ) {}
-  async resignAccount(dto: ResignDTO) {
+  async registerAccount(
+    dto: ResignDTO,
+  ): Promise<{ message: string; userId: number; userName: string }> {
     await this.validateResignInput(dto);
 
     // const find = await this.isEmailAvailable(dto.email);
     // if (!find) {
     //   throw new ApiErrorException('User đã tồn tại', HttpStatus.CONFLICT);
     // }
-    console.log(dto.password);
-
     const pwdHash = await this.hashPwd(dto.password);
     const newUser = await this.mapDtoToUser(dto, pwdHash);
-    console.log(newUser);
-
     const saveUser = await this.userService.saveUser(newUser);
     return {
       message: 'Đăng ký thành công',
@@ -39,7 +36,10 @@ export class AuthService {
       userName: saveUser.userName,
     };
   }
-  async loginAccount(dto: LoginDTO) {
+  async loginAccount(dto: LoginDTO): Promise<{
+    token: { accessToken: string; refreshToken: string };
+    info: { user: User; userName: string; email: string };
+  }> {
     this.validateLoginInput(dto);
     const user = await this.userService.getUserEmail(dto.email);
     if (!user) {
@@ -69,7 +69,7 @@ export class AuthService {
       info: {
         user,
         userName: user.userName,
-        email: user.email,
+        email: user.email ? user.email : '',
       },
     };
   }

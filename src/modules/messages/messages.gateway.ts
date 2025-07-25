@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
+  ConnectedSocket,
+  MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
   SubscribeMessage,
@@ -10,6 +12,9 @@ import { Server, Socket } from 'socket.io';
 import { UserService } from '../user/user.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { MessagesService } from './messages.service';
+import { SendMessageDTO } from './dto/send-message.dto';
+import { userInfo } from 'os';
 export enum EventMessages {
   // Message events
   NOTIFICATION_NEW_MESSAGE = 'notification_new_message',
@@ -62,19 +67,162 @@ export class MessagesGateway
   private readonly userConnections = new Map<string, Set<string>>(); // userId -> Set of socketIds
   private readonly socketUsers = new Map<
     string,
-    { userId: number; userType: 'user' | 'system' }
+    {
+      userId: number;
+      userType: 'user' | 'system';
+      userName: string;
+      email: string;
+    }
   >(); // socketId -> user info
   constructor(
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly messageService: MessagesService,
   ) {}
 
-  handleConnection(client: Socket): void {
+  async handleConnection(client: Socket) {
     console.log('Client connected:', client.id);
+    try {
+      const token = client.handshake.auth.token as string;
+      if (!token) {
+        client.emit(EventMessages.CONNECTION_ERROR, 'No token provided');
+        client.disconnect();
+        return;
+      }
+      const userInfo = await this.jwtService.verifyAsync(token, {
+        secret: this.configService.get<string>('JWT_SECRET'),
+      });
+      if (!userInfo || !userInfo.userId) {
+        client.emit(EventMessages.CONNECTION_ERROR, 'Invalid token');
+        client.disconnect();
+        return;
+      }
+      const userId = userInfo.userId;
+      const userType = userInfo.userType || 'user'; // Default to 'user'
+      const user = await this.userService.getUserById(userId);
+      if (!user) {
+        client.emit(EventMessages.CONNECTION_ERROR, 'User not found');
+        client.disconnect();
+        return;
+      }
+      const userKey = userId.toString();
+
+      // Store user info
+      this.socketUsers.set(client.id, {
+        userId,
+        userType,
+        userName: user.userName,
+        email: user.email!,
+      });
+
+      if (!this.userConnections.has(userKey)) {
+        this.userConnections.set(userKey, new Set());
+      }
+      this.userConnections.get(userKey)?.add(client.id);
+
+      client.emit(EventMessages.CONNECTION_SUCCESS, {
+        message: 'Connected successfully',
+        userId,
+        userName: user.userName,
+      });
+
+      this.server.emit(EventMessages.USER_ONLINE, {
+        userId,
+        userName: user.userName,
+        timestamp: new Date(),
+      });
+    } catch (error) {
+      console.log('[WebSocket] Error during connection:', error);
+      client.disconnect();
+    }
   }
 
   handleDisconnect(client: Socket): void {
-    console.log('Client disconnected:', client.id);
+    const userInfo = this.socketUsers.get(client.id);
+    if (userInfo) {
+      const { userId, userName } = userInfo;
+      const userKey = userId.toString();
+
+      this.userConnections.get(userKey)?.delete(client.id);
+      if (this.userConnections.get(userKey)?.size === 0) {
+        this.userConnections.delete(userKey);
+      }
+      // Broadcast user offline status
+      this.server.emit(EventMessages.USER_OFFLINE, {
+        userId,
+        userName,
+        timestamp: new Date(),
+      });
+      this.socketUsers.delete(client.id);
+      console.log('Client disconnected:', client.id);
+    }
+  }
+  @SubscribeMessage(EventMessages.SEND_MESSAGE)
+  async handlerSendMessage(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: SendMessageDTO,
+  ) {
+    try {
+      const userInfo = this.socketUsers.get(client.id);
+      if (!userInfo) {
+        client.emit(EventMessages.MESSAGE_ERROR, 'User not found');
+        return;
+      }
+      if (!payload || !payload.content) {
+        client.emit(EventMessages.MESSAGE_ERROR, 'Message content is required');
+        return;
+      }
+      const message = await this.messageService.sendMessage(
+        payload,
+        userInfo.userId.toString(),
+      );
+      if (!message) {
+        client.emit(EventMessages.MESSAGE_ERROR, 'Failed to send message');
+        return;
+      }
+      client.emit(EventMessages.SEND_MESSAGE, message);
+      this.server
+        .to(`conversation_${payload.conversationId}`)
+        .emit(EventMessages.NEW_MESSAGE, {
+          ...message,
+          conversationId: payload.conversationId,
+        });
+      // this.sendNotificationToOfflineUsers(
+      //   data.conversationId,
+      //   message,
+      //   userInfo.userId,
+      // );
+    } catch (error) {
+      console.log('[WebSocket] Error sending message:', error);
+      client.emit(EventMessages.MESSAGE_ERROR, 'Error sending message');
+    }
+  }
+  // Join conversation room
+  @SubscribeMessage('JOIN_CONVERSATION')
+  joinConverSationRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { conversationId: string },
+  ) {
+    const conversationRoom = payload.conversationId;
+    client.join(conversationRoom);
+    console.log(
+      `Socket ${client.id} joined conversation room: ${conversationRoom}`,
+    );
+    client.emit(EventMessages.JOIN_CONVERSATION)
+  }
+
+  // Leave conversation room
+  @SubscribeMessage('LEAVE_CONVERSATION')
+  leaveConversationRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { conversationId: string },
+  ) {
+    const conversationRoom = payload.conversationId;
+    client.leave(conversationRoom);
+    console.log(
+      `Socket ${client.id} left conversation room: ${conversationRoom}`,
+    );
+    client.emit(EventMessages.LEAVE_CONVERSATION)
   }
 }
