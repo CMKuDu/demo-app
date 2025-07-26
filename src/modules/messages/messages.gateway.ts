@@ -14,46 +14,27 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { MessagesService } from './messages.service';
 import { SendMessageDTO } from './dto/send-message.dto';
-import { userInfo } from 'os';
+
 export enum EventMessages {
-  // Message events
   NOTIFICATION_NEW_MESSAGE = 'notification_new_message',
   SEND_MESSAGE = 'send_message',
   NEW_MESSAGE = 'new_message',
   MESSAGE_SENT = 'message_sent',
   MESSAGE_ERROR = 'message_error',
-
-  //Converstion events
   NEW_CONVERSATION = 'new_conversation',
-  NEW_UNASSIGNED_CONVERSATION = 'new_unassigned_conversation',
-  CONVERSATION_ASSIGNED = 'conversation_assigned',
-  CONVERSATION_CLOSED = 'conversation_closed',
   JOIN_CONVERSATION = 'join_conversation',
   LEAVE_CONVERSATION = 'leave_conversation',
-
-  // Real-time Indicators
   TYPING_START = 'typing_start',
   TYPING_STOP = 'typing_stop',
   USER_TYPING = 'user_typing',
   MARK_AS_READ = 'mark_as_read',
   MESSAGE_READ = 'message_read',
-
-  // User status events
   USER_ONLINE = 'user_online',
   USER_OFFLINE = 'user_offline',
-  CSKH_STATUS_CHANGED = 'cskh_status_changed',
-
-  // System Events
   CONNECTION_SUCCESS = 'connection_success',
   CONNECTION_ERROR = 'connection_error',
-  CONVERSATION_STATS_UPDATE = 'conversation_stats_update',
-  NOTIFICATION = 'notification',
-
-  //
-  JOIN_SYSTEM_USER_ROOM = 'join_system_user_room',
-  JOINED_SYSTEM_USER_ROOM = 'joined_system_user_room',
-  LEAVE_SYSTEM_USER_ROOM = 'leave_system_user_room',
 }
+
 @Injectable()
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -64,7 +45,8 @@ export class MessagesGateway
 {
   @WebSocketServer()
   server: Server;
-  private readonly userConnections = new Map<string, Set<string>>(); // userId -> Set of socketIds
+
+  private readonly userConnections = new Map<string, Set<string>>();
   private readonly socketUsers = new Map<
     string,
     {
@@ -73,7 +55,9 @@ export class MessagesGateway
       userName: string;
       email: string;
     }
-  >(); // socketId -> user info
+  >();
+  private typingTimeouts = new Map<string, NodeJS.Timeout>();
+
   constructor(
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
@@ -82,7 +66,6 @@ export class MessagesGateway
   ) {}
 
   async handleConnection(client: Socket) {
-    console.log('Client connected:', client.id);
     try {
       const token = client.handshake.auth.token as string;
       if (!token) {
@@ -90,32 +73,31 @@ export class MessagesGateway
         client.disconnect();
         return;
       }
+
       const userInfo = await this.jwtService.verifyAsync(token, {
         secret: this.configService.get<string>('JWT_SECRET'),
       });
-      if (!userInfo || !userInfo.userId) {
+      if (!userInfo?.userId) {
         client.emit(EventMessages.CONNECTION_ERROR, 'Invalid token');
         client.disconnect();
         return;
       }
-      const userId = userInfo.userId;
-      const userType = userInfo.userType || 'user'; // Default to 'user'
-      const user = await this.userService.getUserById(userId);
+
+      const user = await this.userService.getUserById(userInfo.userId);
       if (!user) {
         client.emit(EventMessages.CONNECTION_ERROR, 'User not found');
         client.disconnect();
         return;
       }
-      const userKey = userId.toString();
 
-      // Store user info
       this.socketUsers.set(client.id, {
-        userId,
-        userType,
+        userId: userInfo.userId,
+        userType: userInfo.userType || 'user',
         userName: user.userName,
         email: user.email!,
       });
 
+      const userKey = userInfo.userId.toString();
       if (!this.userConnections.has(userKey)) {
         this.userConnections.set(userKey, new Set());
       }
@@ -123,21 +105,21 @@ export class MessagesGateway
 
       client.emit(EventMessages.CONNECTION_SUCCESS, {
         message: 'Connected successfully',
-        userId,
+        userId: userInfo.userId,
         userName: user.userName,
       });
 
       this.server.emit(EventMessages.USER_ONLINE, {
-        userId,
+        userId: userInfo.userId,
         userName: user.userName,
         timestamp: new Date(),
       });
-      client.emit(EventMessages.CONNECTION_SUCCESS, 'Connected successfully');
     } catch (error) {
-      console.log('[WebSocket] Error during connection:', error);
+      console.log('[WebSocket] Connection error:', error);
       client.disconnect();
     }
   }
+
   handleDisconnect(client: Socket): void {
     const userInfo = this.socketUsers.get(client.id);
     if (userInfo) {
@@ -148,81 +130,139 @@ export class MessagesGateway
       if (this.userConnections.get(userKey)?.size === 0) {
         this.userConnections.delete(userKey);
       }
-      // Broadcast user offline status
+
       this.server.emit(EventMessages.USER_OFFLINE, {
         userId,
         userName,
         timestamp: new Date(),
       });
+
       this.socketUsers.delete(client.id);
-      console.log('Client disconnected:', client.id);
       client.emit(EventMessages.CONNECTION_ERROR, 'Disconnected');
     }
   }
-  // Join conversation room
+
+  private getClientContext(
+    client: Socket,
+    conversationId?: string,
+  ): {
+    userInfo: { userId: number; userName: string } | null;
+    room?: string;
+    key?: string;
+  } {
+    const userInfo = this.socketUsers.get(client.id) || null;
+    if (!userInfo) return { userInfo: null };
+
+    if (!conversationId) return { userInfo };
+
+    const room = `conversation_${conversationId}`;
+    const key = `${room}_${userInfo.userId}`;
+    return { userInfo, room, key };
+  }
+
   @SubscribeMessage(EventMessages.JOIN_CONVERSATION)
-  joinConverSationRoom(
+  joinConversationRoom(
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: { conversationId: string },
   ) {
-    const conversationRoom = payload.conversationId;
-    client.join(conversationRoom);
-    console.log(
-      `Socket ${client.id} joined conversation room: ${conversationRoom}`,
-    );
-    client.emit(EventMessages.JOIN_CONVERSATION);
+    const { room } = this.getClientContext(client, payload.conversationId);
+    if (!room) return;
+
+    client.join(room);
+    console.log(`Socket ${client.id} joined room: ${room}`);
+    client.to(room).emit(EventMessages.JOIN_CONVERSATION);
   }
-  // Leave conversation room
-  @SubscribeMessage(EventMessages.LEAVE_CONVERSATION)
-  leaveConversationRoom(
+
+  @SubscribeMessage(EventMessages.TYPING_START)
+  typingStart(
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: { conversationId: string },
   ) {
-    const conversationRoom = payload.conversationId;
-    client.leave(conversationRoom);
-    console.log(
-      `Socket ${client.id} left conversation room: ${conversationRoom}`,
+    const { userInfo, room, key } = this.getClientContext(
+      client,
+      payload.conversationId,
     );
-    client.emit(EventMessages.LEAVE_CONVERSATION);
+    if (!userInfo || !room) return;
+    if (!client.rooms.has(room)) return;
+
+    this.emitTyping(room, userInfo, true);
+    this.setTypingTimeout(room, userInfo.userId, key!);
   }
+
+  @SubscribeMessage(EventMessages.TYPING_STOP)
+  typingStop(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { conversationId: string },
+  ) {
+    const { userInfo, room, key } = this.getClientContext(
+      client,
+      payload.conversationId,
+    );
+    if (!userInfo || !room || !key) return;
+
+    this.emitTyping(room, userInfo, false);
+
+    if (this.typingTimeouts.has(key)) {
+      clearTimeout(this.typingTimeouts.get(key)!);
+      this.typingTimeouts.delete(key);
+    }
+  }
+
   @SubscribeMessage(EventMessages.SEND_MESSAGE)
   async handlerSendMessage(
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: SendMessageDTO,
   ) {
+    const { userInfo, room } = this.getClientContext(
+      client,
+      payload.conversationId,
+    );
+    if (!userInfo || !room) {
+      client.emit(EventMessages.MESSAGE_ERROR, 'Invalid user or room');
+      return;
+    }
+
+    if (!payload.content) {
+      client.emit(EventMessages.MESSAGE_ERROR, 'Message content is required');
+      return;
+    }
+
     try {
-      const userInfo = this.socketUsers.get(client.id);
-      if (!userInfo) {
-        client.emit(EventMessages.MESSAGE_ERROR, 'User not found');
-        return;
-      }
-      if (!payload || !payload.content) {
-        client.emit(EventMessages.MESSAGE_ERROR, 'Message content is required');
-        return;
-      }
       const message = await this.messageService.sendMessage(
         payload,
         userInfo.userId.toString(),
       );
-      if (!message) {
-        client.emit(EventMessages.MESSAGE_ERROR, 'Failed to send message');
-        return;
-      }
       client.emit(EventMessages.SEND_MESSAGE, message);
-      this.server
-        .to(`conversation_${payload.conversationId}`)
-        .emit(EventMessages.NEW_MESSAGE, {
-          ...message,
-          conversationId: payload.conversationId,
-        });
-      // this.sendNotificationToOfflineUsers(
-      //   data.conversationId,
-      //   message,
-      //   userInfo.userId,
-      // );
+      this.server.to(room).emit(EventMessages.NEW_MESSAGE, {
+        ...message,
+        conversationId: payload.conversationId,
+      });
     } catch (error) {
-      console.log('[WebSocket] Error sending message:', error);
       client.emit(EventMessages.MESSAGE_ERROR, 'Error sending message');
     }
+  }
+
+  private emitTyping(room: string, userInfo: any, typing: boolean) {
+    this.server.to(room).emit(EventMessages.USER_TYPING, {
+      userId: userInfo.userId,
+      userName: userInfo.userName,
+      typing,
+    });
+  }
+
+  private setTypingTimeout(room: string, userId: number, key: string) {
+    if (this.typingTimeouts.has(key)) {
+      clearTimeout(this.typingTimeouts.get(key)!);
+    }
+    this.typingTimeouts.set(
+      key,
+      setTimeout(() => {
+        this.server.to(room).emit(EventMessages.USER_TYPING, {
+          userId,
+          typing: false,
+        });
+        this.typingTimeouts.delete(key);
+      }, 5000),
+    );
   }
 }

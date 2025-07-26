@@ -1,15 +1,9 @@
-import {
-  IsEnum,
-  IsOptional,
-  IsString,
-  IsUUID,
-  MAX_LENGTH,
-  MaxLength,
-} from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { MessageType } from 'src/Entites/messages.entity';
 
 export class SendMessageDTO {
   @IsString()
+  @MaxLength(1000) // giới hạn độ dài nội dung
   content: string;
 
   @IsEnum(MessageType)
@@ -21,8 +15,8 @@ export class SendMessageDTO {
 
   @IsUUID()
   @IsOptional()
-  replyToMessageId?: number;
+  replyToMessageId?: string; // ✅ đổi từ number sang string
 
   @IsOptional()
-  metadata?: any;
+  metadata?: Record<string, any>; // tốt hơn là any
 }
