@@ -132,12 +132,12 @@ export class MessagesGateway
         userName: user.userName,
         timestamp: new Date(),
       });
+      client.emit(EventMessages.CONNECTION_SUCCESS, 'Connected successfully');
     } catch (error) {
       console.log('[WebSocket] Error during connection:', error);
       client.disconnect();
     }
   }
-
   handleDisconnect(client: Socket): void {
     const userInfo = this.socketUsers.get(client.id);
     if (userInfo) {
@@ -156,7 +156,34 @@ export class MessagesGateway
       });
       this.socketUsers.delete(client.id);
       console.log('Client disconnected:', client.id);
+      client.emit(EventMessages.CONNECTION_ERROR, 'Disconnected');
     }
+  }
+  // Join conversation room
+  @SubscribeMessage(EventMessages.JOIN_CONVERSATION)
+  joinConverSationRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { conversationId: string },
+  ) {
+    const conversationRoom = payload.conversationId;
+    client.join(conversationRoom);
+    console.log(
+      `Socket ${client.id} joined conversation room: ${conversationRoom}`,
+    );
+    client.emit(EventMessages.JOIN_CONVERSATION);
+  }
+  // Leave conversation room
+  @SubscribeMessage(EventMessages.LEAVE_CONVERSATION)
+  leaveConversationRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { conversationId: string },
+  ) {
+    const conversationRoom = payload.conversationId;
+    client.leave(conversationRoom);
+    console.log(
+      `Socket ${client.id} left conversation room: ${conversationRoom}`,
+    );
+    client.emit(EventMessages.LEAVE_CONVERSATION);
   }
   @SubscribeMessage(EventMessages.SEND_MESSAGE)
   async handlerSendMessage(
@@ -197,32 +224,5 @@ export class MessagesGateway
       console.log('[WebSocket] Error sending message:', error);
       client.emit(EventMessages.MESSAGE_ERROR, 'Error sending message');
     }
-  }
-  // Join conversation room
-  @SubscribeMessage('JOIN_CONVERSATION')
-  joinConverSationRoom(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { conversationId: string },
-  ) {
-    const conversationRoom = payload.conversationId;
-    client.join(conversationRoom);
-    console.log(
-      `Socket ${client.id} joined conversation room: ${conversationRoom}`,
-    );
-    client.emit(EventMessages.JOIN_CONVERSATION)
-  }
-
-  // Leave conversation room
-  @SubscribeMessage('LEAVE_CONVERSATION')
-  leaveConversationRoom(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { conversationId: string },
-  ) {
-    const conversationRoom = payload.conversationId;
-    client.leave(conversationRoom);
-    console.log(
-      `Socket ${client.id} left conversation room: ${conversationRoom}`,
-    );
-    client.emit(EventMessages.LEAVE_CONVERSATION)
   }
 }

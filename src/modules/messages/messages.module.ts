@@ -7,12 +7,13 @@ import { User } from 'src/Entites/user.entity';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { UserModule } from '../user/user.module';
+import { Message } from 'src/Entites/messages.entity';
 
 @Module({
   providers: [MessagesService, MessagesGateway],
   controllers: [MessagesController],
   imports: [
-    TypeOrmModule.forFeature([User]),
+    TypeOrmModule.forFeature([User, Message]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
@@ -21,7 +22,6 @@ import { UserModule } from '../user/user.module';
       }),
       inject: [ConfigService],
     }),
-    UserModule,
     forwardRef(() => UserModule),
   ],
   exports: [MessagesService, MessagesGateway],

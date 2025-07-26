@@ -25,13 +25,17 @@ import { AuthModule } from './modules/auth/auth.module';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
+        const host = configService.get<string>('DB_HOST');
+        const port = configService.get<string>('DB_PORT');
+        const username = configService.get<string>('DB_USERNAME');
+        const password = configService.get<string>('DB_PASSWORD');
+        const database = configService.get<string>('DB_DATABASE');
+
+        const url = `postgres://${username}:${password}@${host}:${port}/${database}`;
         return {
-          type: 'mysql',
-          host: configService.get<string>('DB_HOST'),
-          port: configService.get<number>('DB_PORT'),
-          username: configService.get<string>('DB_USERNAME'),
-          password: configService.get<string>('DB_PASSWORD'),
-          database: configService.get<string>('DB_DATABASE'),
+          // type: 'mysql',
+          type: 'postgres',
+          url,
           entities: [
             User,
             Message,
@@ -40,7 +44,11 @@ import { AuthModule } from './modules/auth/auth.module';
             ConversationMember,
             Conversation,
           ],
-          synchronize: configService.get<boolean>('DB_SYNC'),
+          synchronize: configService.get<string>('DB_SYNC') === 'true',
+          autoLoadEntities: true,
+          // ssl: {
+          //   rejectUnauthorized: false, // BẮT BUỘC CHO SUPABASE
+          // },
         };
       },
     }),
@@ -53,7 +61,7 @@ import { AuthModule } from './modules/auth/auth.module';
     }),
     UserModule,
     MessagesModule,
-    AuthModule
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [AppService],
