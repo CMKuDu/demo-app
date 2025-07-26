@@ -33,6 +33,7 @@
     "@nestjs/websockets": "^11.1.5",
     "@types/bcrypt": "^6.0.0",
     "@types/pg": "^8.15.4",
+    "axios": "^1.11.0",
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",

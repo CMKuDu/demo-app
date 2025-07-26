@@ -15,6 +15,7 @@ import { Conversation } from './Entites/conversation.entity';
 import { ConversationMember } from './Entites/conversationMember.entity';
 import { MessagesModule } from './modules/messages/messages.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { RenderModule } from './modules/render/render.module';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { AuthModule } from './modules/auth/auth.module';
     UserModule,
     MessagesModule,
     AuthModule,
+    RenderModule,
   ],
   controllers: [AppController],
   providers: [AppService],
