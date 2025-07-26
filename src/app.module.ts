@@ -46,9 +46,9 @@ import { AuthModule } from './modules/auth/auth.module';
           ],
           synchronize: configService.get<string>('DB_SYNC') === 'true',
           autoLoadEntities: true,
-          // ssl: {
-          //   rejectUnauthorized: false, // BẮT BUỘC CHO SUPABASE
-          // },
+          ssl: {
+            rejectUnauthorized: false, // BẮT BUỘC CHO SUPABASE
+          },
         };
       },
     }),
