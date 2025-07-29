@@ -6,7 +6,7 @@ import {
   MAX_LENGTH,
   MaxLength,
 } from 'class-validator';
-import { MessageType } from 'src/Entites/messages.entity';
+import { MessageStatus, MessageType } from 'src/Entites/messages.entity';
 
 export class SendMessageDTO {
   @IsString()
@@ -25,4 +25,7 @@ export class SendMessageDTO {
 
   @IsOptional()
   metadata?: any;
+
+  @IsEnum(MessageStatus)
+  status: MessageStatus;
 }

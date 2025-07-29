@@ -2,20 +2,18 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { UserModule } from './modules/user/user.module';
-import { UserController } from './modules/user/user.controller';
-import { UserService } from './modules/user/user.service';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from './Entites/user.entity';
 import { HttpModule } from '@nestjs/axios';
 import { Message } from './Entites/messages.entity';
 import { MessageReaction } from './Entites/messageReaction.entity';
-import { GroupMember } from './Entites/groupMember.entity';
 import { Conversation } from './Entites/conversation.entity';
 import { ConversationMember } from './Entites/conversationMember.entity';
 import { MessagesModule } from './modules/messages/messages.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { RenderModule } from './modules/render/render.module';
+import { ConversationModule } from './modules/conversation/conversation.module';
 
 @Module({
   imports: [
@@ -41,7 +39,6 @@ import { RenderModule } from './modules/render/render.module';
             User,
             Message,
             MessageReaction,
-            GroupMember,
             ConversationMember,
             Conversation,
           ],
@@ -64,6 +61,7 @@ import { RenderModule } from './modules/render/render.module';
     MessagesModule,
     AuthModule,
     RenderModule,
+    ConversationModule,
   ],
   controllers: [AppController],
   providers: [AppService],
