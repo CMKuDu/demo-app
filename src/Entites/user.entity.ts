@@ -3,15 +3,12 @@ import { BaseEntity } from 'src/Base/entity.base';
 import { Column, Entity, OneToMany } from 'typeorm';
 import { MessageReaction } from './messageReaction.entity';
 import { Message } from './messages.entity';
-import { GroupMember } from './groupMember.entity';
 
 @Entity('user')
 export class User extends BaseEntity {
   @OneToMany(() => MessageReaction, (recipient) => recipient.user, {
     cascade: true,
   })
-  @OneToMany(() => GroupMember, (groupMember) => groupMember.user)
-  groupMemberships: GroupMember[];
   reactions: MessageReaction[];
   @OneToMany(() => Message, (message) => message.sender)
   messages: Message[];

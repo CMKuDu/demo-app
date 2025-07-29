@@ -1,4 +1,3 @@
-import { Injectable } from '@nestjs/common';
 import {
   ConnectedSocket,
   MessageBody,
@@ -9,30 +8,41 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { UserService } from '../user/user.service';
+import { Inject, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { MessagesService } from './messages.service';
+import { UserService } from '../user/user.service';
 import { SendMessageDTO } from './dto/send-message.dto';
+import {
+  IMessageService,
+  IMessageServiceToken,
+} from './interface/message.interface';
+import {
+  IMessageReactionService,
+  IMessageReactionToken,
+} from '../message-reaction/interface/message-reaction.interface';
+import {
+  IConversationService,
+  IConversationToken,
+} from '../conversation/interface/conversation.interface';
 
 export enum EventMessages {
-  NOTIFICATION_NEW_MESSAGE = 'notification_new_message',
-  SEND_MESSAGE = 'send_message',
-  NEW_MESSAGE = 'new_message',
-  MESSAGE_SENT = 'message_sent',
-  MESSAGE_ERROR = 'message_error',
+  CONNECTION_SUCCESS = 'connection_success',
+  CONNECTION_ERROR = 'connection_error',
+  USER_ONLINE = 'user_online',
+  USER_OFFLINE = 'user_offline',
   NEW_CONVERSATION = 'new_conversation',
   JOIN_CONVERSATION = 'join_conversation',
   LEAVE_CONVERSATION = 'leave_conversation',
+  SEND_MESSAGE = 'send_message',
+  NEW_MESSAGE = 'new_message',
+  MESSAGE_ERROR = 'message_error',
+  MARK_AS_READ = 'mark_as_read',
+  MESSAGE_READ = 'message_read',
+  USER_REACTION_MESSAGE = 'reaction_message',
   TYPING_START = 'typing_start',
   TYPING_STOP = 'typing_stop',
   USER_TYPING = 'user_typing',
-  MARK_AS_READ = 'mark_as_read',
-  MESSAGE_READ = 'message_read',
-  USER_ONLINE = 'user_online',
-  USER_OFFLINE = 'user_offline',
-  CONNECTION_SUCCESS = 'connection_success',
-  CONNECTION_ERROR = 'connection_error',
 }
 
 @Injectable()
@@ -43,26 +53,26 @@ export enum EventMessages {
 export class MessagesGateway
   implements OnGatewayConnection, OnGatewayDisconnect
 {
-  @WebSocketServer()
-  server: Server;
+  @WebSocketServer() server: Server;
 
   private readonly userConnections = new Map<string, Set<string>>();
   private readonly socketUsers = new Map<
     string,
-    {
-      userId: number;
-      userType: 'user' | 'system';
-      userName: string;
-      email: string;
-    }
+    { userId: string; userName: string }
   >();
   private typingTimeouts = new Map<string, NodeJS.Timeout>();
+  private readonly lastSeen = new Map<string, Date>();
 
   constructor(
-    private readonly userService: UserService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
-    private readonly messageService: MessagesService,
+    private readonly userService: UserService,
+    @Inject(IMessageServiceToken)
+    private readonly messageService: IMessageService,
+    @Inject(IMessageReactionToken)
+    private readonly messageReactionService: IMessageReactionService,
+    @Inject(IConversationToken)
+    private readonly conversationService: IConversationService,
   ) {}
 
   async handleConnection(client: Socket) {
@@ -77,6 +87,7 @@ export class MessagesGateway
       const userInfo = await this.jwtService.verifyAsync(token, {
         secret: this.configService.get<string>('JWT_SECRET'),
       });
+
       if (!userInfo?.userId) {
         client.emit(EventMessages.CONNECTION_ERROR, 'Invalid token');
         client.disconnect();
@@ -92,9 +103,7 @@ export class MessagesGateway
 
       this.socketUsers.set(client.id, {
         userId: userInfo.userId,
-        userType: userInfo.userType || 'user',
         userName: user.userName,
-        email: user.email!,
       });
 
       const userKey = userInfo.userId.toString();
@@ -102,6 +111,10 @@ export class MessagesGateway
         this.userConnections.set(userKey, new Set());
       }
       this.userConnections.get(userKey)?.add(client.id);
+
+      const conversations =
+        await this.conversationService.getUserConversations(userKey);
+      conversations.forEach((c) => client.join(`conversation_${c.id}`));
 
       client.emit(EventMessages.CONNECTION_SUCCESS, {
         message: 'Connected successfully',
@@ -112,7 +125,6 @@ export class MessagesGateway
       this.server.emit(EventMessages.USER_ONLINE, {
         userId: userInfo.userId,
         userName: user.userName,
-        timestamp: new Date(),
       });
     } catch (error) {
       console.log('[WebSocket] Connection error:', error);
@@ -122,55 +134,77 @@ export class MessagesGateway
 
   handleDisconnect(client: Socket): void {
     const userInfo = this.socketUsers.get(client.id);
-    if (userInfo) {
-      const { userId, userName } = userInfo;
-      const userKey = userId.toString();
+    if (!userInfo) return;
 
-      this.userConnections.get(userKey)?.delete(client.id);
-      if (this.userConnections.get(userKey)?.size === 0) {
-        this.userConnections.delete(userKey);
-      }
+    const { userId, userName } = userInfo;
+    const userKey = userId.toString();
 
-      this.server.emit(EventMessages.USER_OFFLINE, {
-        userId,
-        userName,
-        timestamp: new Date(),
-      });
-
-      this.socketUsers.delete(client.id);
-      client.emit(EventMessages.CONNECTION_ERROR, 'Disconnected');
+    this.userConnections.get(userKey)?.delete(client.id);
+    if (this.userConnections.get(userKey)?.size === 0) {
+      this.userConnections.delete(userKey);
+      this.lastSeen.set(userId, new Date());
     }
-  }
 
-  private getClientContext(
-    client: Socket,
-    conversationId?: string,
-  ): {
-    userInfo: { userId: number; userName: string } | null;
-    room?: string;
-    key?: string;
-  } {
-    const userInfo = this.socketUsers.get(client.id) || null;
-    if (!userInfo) return { userInfo: null };
+    this.server.emit(EventMessages.USER_OFFLINE, {
+      userId,
+      userName,
+      lastSeen: this.lastSeen.get(userId),
+    });
 
-    if (!conversationId) return { userInfo };
-
-    const room = `conversation_${conversationId}`;
-    const key = `${room}_${userInfo.userId}`;
-    return { userInfo, room, key };
+    this.socketUsers.delete(client.id);
   }
 
   @SubscribeMessage(EventMessages.JOIN_CONVERSATION)
-  joinConversationRoom(
+  joinConversation(
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: { conversationId: string },
   ) {
     const { room } = this.getClientContext(client, payload.conversationId);
     if (!room) return;
-
     client.join(room);
-    console.log(`Socket ${client.id} joined room: ${room}`);
-    client.to(room).emit(EventMessages.JOIN_CONVERSATION);
+    this.server.to(room).emit(EventMessages.JOIN_CONVERSATION, {
+      userId: this.socketUsers.get(client.id)?.userId,
+    });
+  }
+
+  @SubscribeMessage(EventMessages.LEAVE_CONVERSATION)
+  leaveConversation(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { conversationId: string },
+  ) {
+    const { room } = this.getClientContext(client, payload.conversationId);
+    if (!room) return;
+    client.leave(room);
+    this.server.to(room).emit(EventMessages.LEAVE_CONVERSATION, {
+      userId: this.socketUsers.get(client.id)?.userId,
+    });
+  }
+
+  @SubscribeMessage(EventMessages.SEND_MESSAGE)
+  async handleSendMessage(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: SendMessageDTO,
+  ) {
+    const { userInfo, room } = this.getClientContext(
+      client,
+      payload.conversationId,
+    );
+    if (!userInfo || !room) return;
+
+    if (!payload.content) {
+      client.emit(EventMessages.MESSAGE_ERROR, 'Content is required');
+      return;
+    }
+
+    try {
+      const message = await this.messageService.sendMessage(
+        payload,
+        userInfo.userId,
+      );
+      this.server.to(room).emit(EventMessages.NEW_MESSAGE, message);
+    } catch (err) {
+      client.emit(EventMessages.MESSAGE_ERROR, 'Error sending message');
+    }
   }
 
   @SubscribeMessage(EventMessages.TYPING_START)
@@ -183,9 +217,10 @@ export class MessagesGateway
       payload.conversationId,
     );
     if (!userInfo || !room) return;
-    if (!client.rooms.has(room)) return;
-
-    this.emitTyping(room, userInfo, true);
+    this.server.to(room).emit(EventMessages.USER_TYPING, {
+      userId: userInfo.userId,
+      typing: true,
+    });
     this.setTypingTimeout(room, userInfo.userId, key!);
   }
 
@@ -199,58 +234,65 @@ export class MessagesGateway
       payload.conversationId,
     );
     if (!userInfo || !room || !key) return;
-
-    this.emitTyping(room, userInfo, false);
-
     if (this.typingTimeouts.has(key)) {
       clearTimeout(this.typingTimeouts.get(key)!);
       this.typingTimeouts.delete(key);
     }
-  }
-
-  @SubscribeMessage(EventMessages.SEND_MESSAGE)
-  async handlerSendMessage(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() payload: SendMessageDTO,
-  ) {
-    const { userInfo, room } = this.getClientContext(
-      client,
-      payload.conversationId,
-    );
-    if (!userInfo || !room) {
-      client.emit(EventMessages.MESSAGE_ERROR, 'Invalid user or room');
-      return;
-    }
-
-    if (!payload.content) {
-      client.emit(EventMessages.MESSAGE_ERROR, 'Message content is required');
-      return;
-    }
-
-    try {
-      const message = await this.messageService.sendMessage(
-        payload,
-        userInfo.userId.toString(),
-      );
-      client.emit(EventMessages.SEND_MESSAGE, message);
-      this.server.to(room).emit(EventMessages.NEW_MESSAGE, {
-        ...message,
-        conversationId: payload.conversationId,
-      });
-    } catch (error) {
-      client.emit(EventMessages.MESSAGE_ERROR, 'Error sending message');
-    }
-  }
-
-  private emitTyping(room: string, userInfo: any, typing: boolean) {
     this.server.to(room).emit(EventMessages.USER_TYPING, {
       userId: userInfo.userId,
-      userName: userInfo.userName,
-      typing,
+      typing: false,
     });
   }
 
-  private setTypingTimeout(room: string, userId: number, key: string) {
+  /** ✅ REACTION_MESSAGE */
+  @SubscribeMessage(EventMessages.USER_REACTION_MESSAGE)
+  async handleReactionMessage(
+    @ConnectedSocket() client: Socket,
+    @MessageBody()
+    payload: {
+      message_id: number;
+      user_id: number;
+      emoji: string;
+      conversationId: string;
+    },
+  ) {
+    const { room } = this.getClientContext(client, payload.conversationId);
+    if (!room) return;
+
+    try {
+      await this.messageReactionService.reactionMessage(payload);
+      this.server.to(room).emit(EventMessages.USER_REACTION_MESSAGE, payload);
+    } catch (error) {
+      client.emit(EventMessages.MESSAGE_ERROR, 'Error reacting to message');
+    }
+  }
+
+  /** ✅ MARK_AS_READ */
+  // @SubscribeMessage(EventMessages.MARK_AS_READ)
+  // async handleMarkAsRead(
+  //   @ConnectedSocket() client: Socket,
+  //   @MessageBody() payload: { conversationId: string; messageId: number },
+  // ) {
+  //   const { userInfo, room } = this.getClientContext(client, payload.conversationId);
+  //   if (!userInfo || !room) return;
+
+  //   await this.messageService.markAsRead(payload.messageId, userInfo.userId);
+  //   this.server.to(room).emit(EventMessages.MESSAGE_READ, {
+  //     messageId: payload.messageId,
+  //     userId: userInfo.userId,
+  //   });
+  // }
+
+  private getClientContext(client: Socket, conversationId?: string) {
+    const userInfo = this.socketUsers.get(client.id) || null;
+    if (!userInfo) return { userInfo: null };
+    if (!conversationId) return { userInfo };
+    const room = `conversation_${conversationId}`;
+    const key = `${room}_${userInfo.userId}`;
+    return { userInfo, room, key };
+  }
+
+  private setTypingTimeout(room: string, userId: string, key: string) {
     if (this.typingTimeouts.has(key)) {
       clearTimeout(this.typingTimeouts.get(key)!);
     }

@@ -1,5 +1,12 @@
 import { BaseEntity } from 'src/Base/entity.base';
-import { Column, Entity, Index, JoinColumn, ManyToOne, OneToMany } from 'typeorm';
+import {
+  Column,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  OneToMany,
+} from 'typeorm';
 import { User } from './user.entity';
 import { Message } from './messages.entity';
 import { ConversationMember } from './conversationMember.entity';
@@ -68,7 +75,12 @@ export class Conversation extends BaseEntity {
     nullable: true,
   })
   lastMessageAt?: Date;
-
+  @Column({
+    name: 'updated_at',
+    type: 'timestamp',
+    nullable: true,
+  })
+  updatedAt?: Date;
   // Relations
   @OneToMany(() => Message, (message) => message.conversation, {
     cascade: true,
