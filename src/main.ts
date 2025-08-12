@@ -93,7 +93,7 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('swagger', app, document);
 
-  await app.listen(configService.get<number>('PORT') || 3000);
+  await app.listen(configService.get<number>('PORT') || 3001);
   console.log(`Application is running on: ${await app.getUrl()}`);
   console.log('WebSocket server initialized'); // Thông báo khởi tạo máy chủ WebSocket
 }

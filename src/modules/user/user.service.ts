@@ -14,7 +14,7 @@ export class UserService implements IUserService {
   constructor(
     @InjectRepository(User)
     protected readonly userRepository: Repository<User>,
-  ) {}
+  ) { }
   async getAllUser(
     query: PaginationMeta,
   ): Promise<PaginationResult<ResUserDTO | null>> {
@@ -37,15 +37,11 @@ export class UserService implements IUserService {
     });
     return res;
   }
-  async getUserEmail(dto: string): Promise<User> {
+  async getUserEmail(dto: string): Promise<User | null> {
     const res = await this.userRepository.findOne({
       where: { email: dto },
     });
-    if (!res)
-      throw new ApiErrorException(
-          'Không tìm thấy người dùng',
-          HttpStatus.NOT_FOUND,
-      );
+
     return res;
   }
   async saveUser(dto: any): Promise<User> {

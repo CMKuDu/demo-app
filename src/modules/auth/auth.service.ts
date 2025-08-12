@@ -23,10 +23,10 @@ export class AuthService implements IAuthService {
   ): Promise<{ message: string; userId: number; userName: string }> {
     await this.validateResignInput(dto);
 
-    // const find = await this.isEmailAvailable(dto.email);
-    // if (!find) {
-    //   throw new ApiErrorException('User đã tồn tại', HttpStatus.CONFLICT);
-    // }
+    const find = await this.isEmailAvailable(dto.email);
+    if (find) {
+      throw new ApiErrorException('User đã tồn tại', HttpStatus.CONFLICT);
+    }
     const pwdHash = await this.hashPwd(dto.password);
     const newUser = await this.mapDtoToUser(dto, pwdHash);
     const saveUser = await this.userService.saveUser(newUser);
@@ -126,8 +126,8 @@ export class AuthService implements IAuthService {
 
   private async isEmailAvailable(email: string): Promise<boolean> {
     const find = await this.userService.getUserEmail(email);
-    if (find) return false;
-    return true;
+    if (find) return true;
+    return false;
   }
   private isValidEmail(email: string): boolean {
     const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

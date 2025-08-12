@@ -9,6 +9,6 @@ export interface IUserService {
     query: PaginationMeta,
   ): Promise<PaginationResult<ResUserDTO | null>>;
   getUserById(dto: ReqUserDTO): Promise<User | null>;
-  getUserEmail(dto: string): Promise<User>;
+  getUserEmail(dto: string): Promise<User | null>;
   saveUser(dto: Partial<User>): Promise<User>;
 }
